@@ -14,9 +14,10 @@ username_max_size = 50
 s = socket()
 host = gethostbyname('0.0.0.0')
 
+
 def send(msg, s):
     print msg
-    key = connected_sockets[msg['response']['username']]['private_key']
+    key = connected_sockets[msg['response']['receiver']]['private_key']
     cipher = AESCipher(key)
     msg = json.dumps(msg)
     msg = cipher.encrypt(msg)
@@ -25,6 +26,7 @@ def send(msg, s):
     print ""
     s.send(msg)
 
+
 def set_username(*args):
     connected_sockets[args[0][0]] = connected_sockets[args[0][1]]
     del connected_sockets[args[0][1]]
@@ -32,66 +34,69 @@ def set_username(*args):
         'message': 'Username successfully changed from '+args[0][1]+' to '+args[0][0]
     }
 
+
 def connect(*args):
     if connected_sockets.has_key(args[0][0]):
         if args[0][0] == args[0][1]:
-            return 'You cannot connect to yourself, dumbass.'
+            return {
+                'messagecontent': 'You cannot connect to yourself, dumbass.',
+                'messagetype'   : 'connect_fail'
+            }
         else:
             Yconn = connected_sockets[args[0][0]]['public_key']
             Yuser = connected_sockets[args[0][1]]['public_key']
             msg = {
                 'response': {
-                    'message'   : 'incoming_connect',
-                    'key'       : Yuser,
-                    'username'  : args[0][0],
-                    'type'      : 'DH Key Exchange'
+                    'messagetype'   : 'incoming_connect',
+                    'sharedkey'     : Yuser,
+                    'sender'        : args[0][0],
                 }
             }
             send(msg, connected_sockets[args[0][0]]['socket'])
             return {
-                'message'   : 'success_connect',
-                'key'       : Yconn,
-                'type'      : 'DH Key Exchange',
-                'username'  : args[0][1],
-                'recipient' : args[0][0]
+                'messagetype'   : 'success_connect',
+                'sharedkey'     : Yconn,
+                'sender'        : args[0][1],
+                'receiver'      : args[0][0]
             }
     else:
         return {
-            'message': 'User not available or not online at the moment'
+            'messagecontent': 'User not available or not online at the moment',
+            'messagetype'   : 'connect_fail'
         }
 
+
 def send_to(*args):
-    # A sends message to B
     msg = {
         'response' : {
-            'username'  : args[0][0],
-            'sender'    : args[0][-1],
-            'msg'       : args[0][1],
-            'message'   : 'incoming_message',
+            'receiver'      : args[0][0],
+            'sender'        : args[0][-1],
+            'messagecontent': args[0][1],
+            'messagetype'   : 'incoming_message',
         }
     }
     soc = connected_sockets[args[0][0]]['socket']
     print ""
     print ""
     print msg
-    print ""
-    print ""
     send(msg, soc)
     return {
-        'username' : args[0][-1],
-        'message' : 'message_sent_success'
+        'receiver'      : args[0][-1],
+        'messagetype'   : 'message_sent_success'
     }
+
 
 def list_users(*args):
     return {
-        'username' : args[0][0],
-        'message': 'Available Users:\n'+'--'+'\n--'.join(connected_sockets.keys())
+        'receiver'      : args[0][0],
+        'messagecontent': 'Available Users:\n'+'--'+'\n--'.join(connected_sockets.keys())
     }
+
 
 def display_help(*args):
     return {
-    'username' : args[0][0],
-    'message': '''
+    'receiver': args[0][0],
+    'message' : '''
     -----------
      HELP MENU
     -----------
@@ -104,11 +109,14 @@ def display_help(*args):
     more options etc'''
     }
 
+
 def exit_client(*args):
     del connected_sockets[args[0][0]]
     return {
-        'message'   : 'success_exit',
-        'username'  : args[0][0]
+        'response': {
+            'messagetype'   : 'success_exit',
+            'receiver'      : args[0][0]
+        }
     }
 
 commands = {
@@ -121,35 +129,39 @@ commands = {
     # more methods later
 }
 
+
 def on_new_client(clientsocket, addr, user):
     while True: # this while is a listen loop to any client
         msg = clientsocket.recv(size)
         print msg
         # decrypt msg
         cipher = AESCipher(connected_sockets[user]['private_key'])
-        # msg = cipher.decrypt(msg)
-        # print addr,' >> ', msg
+        msg = cipher.decrypt(msg)
+        print addr,' >> ', msg
         msg = json.loads(msg)
-        if msg['type'] == 'command':
-            msg['args'].append(msg['username'])
+        if msg['messagetype'] == 'command':
+            msg['args'].append(msg['sender'])
             response = {
-                'type': 'response',
-                'response': commands[msg['command']](msg['args'])
+                'messagetype'   : 'response',
+                'response'      : commands[msg['command']](msg['args'])
             }
             send(response, clientsocket)
             if msg['command'] == '/exit':
                 exit()
-        elif msg['type'] == 'DH Key Exchange':
+        elif msg['messagetype'] == 'incoming_connect' or msg['messagetype'] == 'success_connect':
             response = msg
-        else:
-            response = {
-                'type': 'response',
-                'response': {
-                    'message'	: 'received',
-		    'username'  : msg['username']
+        elif msg['messagetype'] == 'message':
+            if msg['receiver'] == '':
+                response = {
+                    'messagetype'   : 'send_failed',
+                    'messagecontent': 'Could not send: no recipient found.'
                 }
-            }
-            send(response, clientsocket)
+            else:
+                response = {
+                    'messagetype'   : 'received',
+		    'sender'        : msg['sender']
+                }
+        send(response, clientsocket)
 
 print 'Test_Server started, waiting for client connections.'
 try:
@@ -173,17 +185,19 @@ while True:
     (c, addr) = s.accept()
     msg = c.recv(size)
     msg = json.loads(msg)
-    Yc = long(msg['key'])
+    Yc = long(msg['sharedkey'])
     c.send(json.dumps({
-        'key': str(Ys)
+        'sharedkey': str(Ys)
     }))
     Ks = (Yc**Xs) % shared_prime
+    print Yc
+    print Ks
     h = SHA256.new()
     h.update(str(Ks))
     Ks = h.hexdigest()
     # register client
-    user = msg['username']
-    connected_sockets[msg['username']] = {
+    user = msg['sender']
+    connected_sockets[user] = {
 		'address'       : addr,
 		'socket'        : c,
 		'private_key'   : Ks,

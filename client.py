@@ -7,10 +7,6 @@ from sys import argv
 from AESCipher import *
 # from client_lib import *
 
-BS = 16
-pad = lambda s: s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
-unpad = lambda s: s[0:-ord(s[-1])]
-
 recipient = ''
 
 if len(argv) != 2:
@@ -33,7 +29,7 @@ size = 2**16
 s = socket()
 s.connect((IP, port))
 
-msg = json.dumps({'key': str(Yc), 'username': username})
+msg = json.dumps({'sharedkey': str(Yc), 'sender': username})
 users_info = {}
 
 
@@ -46,13 +42,11 @@ def send(msg):
 s.send(msg)
 msg = s.recv(size)
 msg = json.loads(msg)
-Ys = long(msg['key'])
+Ys = long(msg['sharedkey'])
 Kc = (Ys**Xc) % shared_prime
 h = SHA256.new()
 h.update(str(Kc))
 Kc = h.hexdigest()
-# print Yc, ' is my public key'
-# print Kc, ' is my private key with the server'
 # end key exchange with server
 
 
@@ -61,39 +55,39 @@ def receive_loop():
     while 1:
         cipher = AESCipher(Kc)
         data = cipher.decrypt(s.recv(size))
-	print "--->"+data+"<---"
 	msg = json.loads(data)
-        if msg['response']['message'] == 'success_exit':
+        print msg
+        if msg['response']['messagetype'] == 'success_exit':
             print 'Connection successfully closed.'
             s.shutdown(SHUT_RDWR)
             s.close()
             sys.exit(0)
-        elif msg['response']['message'] == 'success_connect':
-            Kr = str((long(msg['response']['key'])**Xc) % shared_prime)
+        elif msg['response']['messagetype'] == 'success_connect':
+            Kr = str((long(msg['response']['sharedkey'])**Xc) % shared_prime)
             h = SHA256.new()
             h.update(Kr)
             Kr = h.hexdigest()
-            recipient = msg['response']['recipient']
+            recipient = msg['response']['receiver']
             users_info[recipient] = {
-                'public_key'    : msg['response']['key'],
+                'public_key'    : msg['response']['sharedkey'],
                 'private_key'   : Kr
             }
-        elif msg['response']['message'] == 'incoming_connect':
-            Kr = str((long(msg['response']['key'])**Xc) % shared_prime)
+        elif msg['response']['messagetype'] == 'incoming_connect':
+            Kr = str((long(msg['response']['sharedkey'])**Xc) % shared_prime)
             h = SHA256.new()
             h.update(Kc)
             Kc = h.hexdigest()
-            users_info[msg['response']['username']] = {
-                'public_key'    : msg['response']['key'],
+            users_info[msg['response']['sender']] = {
+                'public_key'    : msg['response']['sharedkey'],
                 'private_key'   : Kr
             }
-        elif msg['response']['message'] == 'incoming_message':
-            user = msg['response']['username']
+        elif msg['response']['messagetype'] == 'incoming_message':
+            receiver = msg['response']['receiver']
             sender = msg['response']['sender']
-            cipher = AESCipher(users_info[user]['private_key'])
+            cipher = AESCipher(users_info[receiver]['private_key'])
             message = cipher.decrypt(msg['response']['msg'])
             print user,'<',sender+':',message
-        print msg['response']['message']
+        print msg['response']['messagecontent']
 
 # start listening asynchronously
 thread.start_new_thread(receive_loop, ())
@@ -108,24 +102,26 @@ while 1:
             msg = cipher.encrypt(' '.join(args[2:]))
             del(args[2:])
             args.append(msg)
-        send({
-            'username'  : username,
-            'type'      : 'command',
-            'command'   : args[0],
-            'args'      : args[1:]
-        })
+            send({
+                'sender'        : username,
+                'messagetype'   : 'command',
+                'command'       : args[0],
+                'args'          : args[1:]
+            })
     else:
         if recipient == '':
             send({
-                'type'      : 'message',
-                'message'   : user_input,
-		'username'  : username
+                'messagetype'   : 'message',
+                'messagecontent': user_input,
+		'sender'        : username,
+                'receiver'      : ''
             })
         else:
             cipher = AESCipher(users_info[recipient]['private_key'])
+            message = user_input
             send({
-                'type'      : 'message',
-                'message'   : user_input,
-                'recipient' : recipient,
-		'username'  : username
+                'messagetype'   : 'message',
+                'messagecontent': cipher.encrypt(message),
+                'receiver'      : recipient,
+		'sender'        : username
             })
