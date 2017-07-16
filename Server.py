@@ -1,5 +1,14 @@
+from Crypto import Random
+from Crypto.Hash import SHA256
+from random import randint
+from socket import socket, gethostbyname
+import json, sys, thread
+
 class Server:
-    def __init__(self):
+    shared_prime = 2**1536 - 2**1472 - 1 + 2**64 * ((2**1406) + 741804)
+    shared_base = 7
+
+    def __init__(self, maxconnections):
         self.port = 12345
         self.size = 2**16
         self.username_max_size = 50
@@ -12,12 +21,20 @@ class Server:
             '/send'     : send_to,
             '/exit'     : exit_client
         }
+        self.X = randint(30, 80)
+        self.Y = (shared_base ** X) % shared_prime
+        self.socket = socket()
+        self.registry = ServerRegistry()
+        self.conn = maxconnections # maximum client connections at a time
 
     # add methods accordingly to the commands above
     # check server.py for methods implementation
 
-    def send():
-        return
+    def send(msg):
+        key = connected_sockets[msg['receiver']]['private_key']
+        cipher = AESCipher(key)
+        msg = cipher.encrypt(json.dumps(msg))
+        self.socket.send(msg)
 
     def set_username():
         return
