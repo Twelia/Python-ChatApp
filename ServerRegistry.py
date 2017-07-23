@@ -10,4 +10,4 @@ class ServerRegistry:
         }
 
     def deleteConnection(username):
-        del connected_sockets[username]
+        del self.sRegistry[username]
