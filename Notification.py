@@ -1,5 +1,10 @@
-class Notification:
+import Token
+
+class Notification(Token):
     def __init__(self, msgtype, receiver, message):
-        self.msgtype = msgtype
-        self.receiver = receiver
-        self.message = message
+        super(self).__init__()
+        self.struct = {
+            'msgtype' : msgtype,
+            'receiver' : receiver,
+            'message' : message
+        }

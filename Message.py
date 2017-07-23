@@ -1,5 +1,10 @@
-class Message:
+import Token
+
+class Message(Token):
     def __init__(self, receiver, sender, message):
-        self.receiver = receiver
-        self.sender = sender
-        self.message = message
+        super(self).__init__()
+        self.struct = {
+            'receiver'  : receiver,
+            'sender'    : sender,
+            'message'   : message,
+        }
